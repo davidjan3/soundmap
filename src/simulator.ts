@@ -2,9 +2,6 @@ import { room } from "./room";
 import * as three from "three";
 import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUtils";
 
-const width = window.innerWidth;
-const height = window.innerHeight;
-
 const scene = new three.Scene();
 
 const walls = loadWalls();
@@ -13,9 +10,8 @@ scene.add(...walls);
 const sources = loadSources();
 scene.add(...sources);
 
-const camera = new three.PerspectiveCamera(90, width / height, 0.1, 100);
+const camera = new three.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.z = -5;
-camera.lookAt(0, 0, 0);
 const mergedRoomGeometry = BufferGeometryUtils.mergeGeometries(walls.map((obj) => obj.geometry));
 mergedRoomGeometry.computeBoundingBox();
 let center = new three.Vector3(0, 0, 0);
@@ -33,12 +29,22 @@ directionalLight1.lookAt(center);
 scene.add(directionalLight1);
 
 const renderer = new three.WebGLRenderer({ antialias: true });
-renderer.setSize(width, height);
+renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setAnimationLoop(animate);
 document.body.appendChild(renderer.domElement);
+window.addEventListener(
+  "resize",
+  () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  },
+  false
+);
 
 let angle = 0;
-const cameraDistance = 10;
+const cameraDistance = 8;
 
 function animate() {
   angle += 0.005;
@@ -97,6 +103,7 @@ function loadSources() {
       color: 0xff0000,
       opacity: 0.5,
       transparent: true,
+      side: three.DoubleSide,
     });
     const mesh = new three.Mesh(geometry, material);
     mesh.position.copy(new three.Vector3(...src.position));
