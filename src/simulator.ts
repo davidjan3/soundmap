@@ -5,19 +5,18 @@ import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUti
 const width = window.innerWidth;
 const height = window.innerHeight;
 
-const camera = new three.PerspectiveCamera(90, width / height, 0.01, 1000);
+const scene = new three.Scene();
+
+const walls = loadWalls();
+scene.add(...walls);
+
+const sources = loadSources();
+scene.add(...sources);
+
+const camera = new three.PerspectiveCamera(90, width / height, 0.1, 100);
 camera.position.z = -5;
 camera.lookAt(0, 0, 0);
-const scene = new three.Scene();
-const renderer = new three.WebGLRenderer({ antialias: true });
-renderer.setSize(width, height);
-renderer.setAnimationLoop(animate);
-document.body.appendChild(renderer.domElement);
-
-const roomObjects = parseRoom();
-scene.add(...roomObjects);
-
-const mergedRoomGeometry = BufferGeometryUtils.mergeGeometries(roomObjects.map((obj) => obj.geometry));
+const mergedRoomGeometry = BufferGeometryUtils.mergeGeometries(walls.map((obj) => obj.geometry));
 mergedRoomGeometry.computeBoundingBox();
 let center = new three.Vector3(0, 0, 0);
 mergedRoomGeometry.boundingBox.getCenter(center);
@@ -33,6 +32,11 @@ directionalLight1.position.set(-2, 10, -5);
 directionalLight1.lookAt(center);
 scene.add(directionalLight1);
 
+const renderer = new three.WebGLRenderer({ antialias: true });
+renderer.setSize(width, height);
+renderer.setAnimationLoop(animate);
+document.body.appendChild(renderer.domElement);
+
 let angle = 0;
 const cameraDistance = 10;
 
@@ -47,9 +51,7 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-animate();
-
-function parseRoom() {
+function loadWalls() {
   return room.walls.map((wall) => {
     const geometry = new three.BufferGeometry();
 
@@ -69,6 +71,35 @@ function parseRoom() {
       opacity: 0.5,
       transparent: true,
     });
-    return new three.Mesh(geometry, material);
+    const mesh = new three.Mesh(geometry, material);
+    return mesh;
+  });
+}
+
+function loadSources() {
+  return room.sources.map((src) => {
+    let phiStart = src.degreeRangeHorizontal ? src.degreeRangeHorizontal[0] * (Math.PI / 180) : 0;
+    let phiLength = src.degreeRangeHorizontal ? src.degreeRangeHorizontal[1] * (Math.PI / 180) : Math.PI * 2;
+    let thetaStart = src.degreeRangeVertical ? src.degreeRangeVertical[0] * (Math.PI / 180) : 0;
+    let thetaLength = src.degreeRangeVertical ? src.degreeRangeVertical[1] * (Math.PI / 180) : Math.PI;
+    let widthSegments = Math.ceil((phiLength / (Math.PI * 2)) * 32);
+    let heightSegments = Math.ceil((thetaLength / Math.PI) * 16);
+    const geometry = new three.SphereGeometry(
+      0.2,
+      widthSegments,
+      heightSegments,
+      phiStart,
+      phiLength,
+      thetaStart,
+      thetaLength
+    );
+    const material = new three.MeshStandardMaterial({
+      color: 0xff0000,
+      opacity: 0.5,
+      transparent: true,
+    });
+    const mesh = new three.Mesh(geometry, material);
+    mesh.position.copy(new three.Vector3(...src.position));
+    return mesh;
   });
 }

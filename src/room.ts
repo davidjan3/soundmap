@@ -1,4 +1,18 @@
-export const room = {
+import { Room } from "types";
+
+export const room: Room = {
+  sources: [
+    {
+      position: [-3.6, 1.4, 6.5],
+      volume: { 200: 40 },
+      degreeRangeVertical: [0, 90],
+    },
+    {
+      position: [-3.6, 1.5, 4.5],
+      volume: { 200: 40 },
+      degreeRangeHorizontal: [90, 180],
+    },
+  ],
   walls: [
     {
       vertices: [
