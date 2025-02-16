@@ -2,7 +2,7 @@ import { Config } from "configscheme";
 
 export const config: Config = {
   settings: {
-    sourceResolution: 0.015,
+    sourceResolution: 0.1,
   },
   room: {
     sources: [

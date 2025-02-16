@@ -80,9 +80,10 @@ function loadWalls() {
 
     const material = new three.MeshStandardMaterial({
       color: 0xffffff,
-      opacity: 0.8,
+      opacity: 0.2,
       transparent: true,
       side: three.DoubleSide,
+      wireframe: true,
     });
     const mesh = new three.Mesh(geometry, material);
     mesh.userData = wall;
@@ -131,7 +132,7 @@ function propagateSoundBeams() {
     for (let x = 0; x <= phiLength * resolution; x++) {
       const phi = phiStart + x * (Math.PI / 180) * (1 / resolution);
       for (let y = 0; y <= thetaLength * resolution; y++) {
-        let soundPressure = Utils.mapFrequencyMap(srcSoundPressure, (v) => v * 100);
+        let soundPressure = Utils.mapFrequencyMap(srcSoundPressure, (f, v) => v);
         const theta = thetaStart + y * (Math.PI / 180) * (1 / resolution);
         const direction = new three.Vector3(1, 0, 0).applyEuler(new three.Euler(phi, theta, 0, "XYZ"));
         soundBeams.push(...propagateSoundBeam(sourceIndex, Utils.Pt2Vector3(src.position), direction, soundPressure));
@@ -169,7 +170,7 @@ function propagateSoundBeam(
   const soundReflexionFac = wall.soundReflexionFac || {};
   Object.keys(soundPressure).forEach((frequency) => {
     if (!(frequency in soundReflexionFac) || soundReflexionFac[frequency] === 1) {
-      soundReflexionFac[frequency] = 0.5;
+      soundReflexionFac[frequency] = 0.75;
     }
   });
   const reflectedSoundPressure = Utils.factorFrequencyMapEntries(soundPressure, soundReflexionFac);
@@ -183,10 +184,9 @@ function renderBeams(soundBeams: SoundBeam[]) {
   );
   return soundBeams.map((beam) => {
     const opacity = Utils.sumFrequencyMap(beam.soundPressure) / loudestSourceSum;
-    console.log(opacity);
-    const color = new three.Color().setHSL(0, 1, opacity * 0.5);
+    // const color = new three.Color().setHSL(0, 1, opacity * 0.5);
     const lineGeometry = new three.BufferGeometry().setFromPoints([beam.from, beam.to]);
-    const lineMaterial = new three.LineBasicMaterial({ color: color });
+    const lineMaterial = new three.LineBasicMaterial({ color: 0xff0000, opacity: opacity, transparent: true });
     const line = new three.Line(lineGeometry, lineMaterial);
     return line;
   });
