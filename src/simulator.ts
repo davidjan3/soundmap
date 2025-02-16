@@ -1,6 +1,7 @@
 import { SoundBeam } from "soundbeam";
 import { config } from "./config";
-import Utils from "./utils";
+import Utils, { PA_REF } from "./utils";
+import { FrequencyMap, Wall } from "configscheme";
 import * as three from "three";
 import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUtils";
 
@@ -12,7 +13,8 @@ scene.add(...walls);
 const sources = loadSources();
 scene.add(...sources);
 
-const soundbeams = propagateSoundBeams();
+const soundBeams = propagateSoundBeams();
+scene.add(...renderBeams(soundBeams));
 
 const camera = new three.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.z = -5;
@@ -78,10 +80,12 @@ function loadWalls() {
 
     const material = new three.MeshStandardMaterial({
       color: 0xffffff,
-      opacity: 0.5,
+      opacity: 0.8,
       transparent: true,
+      side: three.DoubleSide,
     });
     const mesh = new three.Mesh(geometry, material);
+    mesh.userData = wall;
     mesh.layers.enable(1);
     return mesh;
   });
@@ -115,7 +119,7 @@ function loadSources() {
 }
 
 function propagateSoundBeams() {
-  const soundbeams: SoundBeam[] = [];
+  const soundBeams: SoundBeam[] = [];
   config.room.sources.forEach((src, sourceIndex) => {
     const phiStart = src.degreeRangeHorizontal ? src.degreeRangeHorizontal[0] * (Math.PI / 180) : 0;
     const phiLength = src.degreeRangeHorizontal ? src.degreeRangeHorizontal[1] : 360;
@@ -127,30 +131,63 @@ function propagateSoundBeams() {
     for (let x = 0; x <= phiLength * resolution; x++) {
       const phi = phiStart + x * (Math.PI / 180) * (1 / resolution);
       for (let y = 0; y <= thetaLength * resolution; y++) {
-        let soundPressure = Utils.mapFrequencyMap(srcSoundPressure, (v) => v / totalBeams);
+        let soundPressure = Utils.mapFrequencyMap(srcSoundPressure, (v) => v * 100);
         const theta = thetaStart + y * (Math.PI / 180) * (1 / resolution);
-        const raycaster = new three.Raycaster(
-          Utils.Pt2Vector3(src.position),
-          new three.Vector3(1, 0, 0).applyEuler(new three.Euler(phi, theta, 0, "XYZ"))
-        );
-        raycaster.layers.set(1);
-        const intersections = raycaster.intersectObjects(scene.children);
-        if (!intersections.length) continue;
-        const intersectionPoint = intersections[0].point;
-        const beam: SoundBeam = {
-          sourceIndex: sourceIndex,
-          soundPressure: soundPressure,
-          from: Utils.Pt2Vector3(src.position),
-          to: intersectionPoint,
-        };
-        soundbeams.push(beam);
-
-        const lineGeometry = new three.BufferGeometry().setFromPoints([beam.from, beam.to]);
-        const lineMaterial = new three.LineBasicMaterial({ color: 0xff0000 });
-        const line = new three.Line(lineGeometry, lineMaterial);
-        scene.add(line);
+        const direction = new three.Vector3(1, 0, 0).applyEuler(new three.Euler(phi, theta, 0, "XYZ"));
+        soundBeams.push(...propagateSoundBeam(sourceIndex, Utils.Pt2Vector3(src.position), direction, soundPressure));
       }
     }
   });
-  return soundbeams;
+  return soundBeams;
+}
+
+function propagateSoundBeam(
+  sourceIndex: number,
+  position: three.Vector3,
+  direction: three.Vector3,
+  soundPressure: FrequencyMap
+) {
+  if (Utils.sumFrequencyMap(soundPressure) < PA_REF) return [];
+  const raycaster = new three.Raycaster(position, direction);
+  raycaster.layers.set(1);
+  const intersections = raycaster.intersectObjects(scene.children);
+  if (!intersections.length) return [];
+  let intersection = intersections[0];
+  if (intersection.point.equals(position)) {
+    if (intersections.length === 1) return [];
+    intersection = intersections[1];
+  }
+  const intersectionPoint = intersection.point;
+  const beam: SoundBeam = {
+    sourceIndex: sourceIndex,
+    soundPressure: soundPressure,
+    from: position,
+    to: intersectionPoint,
+  };
+
+  const wall = intersection.object.userData as Wall;
+  const soundReflexionFac = wall.soundReflexionFac || {};
+  Object.keys(soundPressure).forEach((frequency) => {
+    if (!(frequency in soundReflexionFac) || soundReflexionFac[frequency] === 1) {
+      soundReflexionFac[frequency] = 0.5;
+    }
+  });
+  const reflectedSoundPressure = Utils.factorFrequencyMapEntries(soundPressure, soundReflexionFac);
+  const reflectedDirection = intersection.normal.add(direction);
+  return [beam, ...propagateSoundBeam(sourceIndex, intersectionPoint, reflectedDirection, reflectedSoundPressure)];
+}
+
+function renderBeams(soundBeams: SoundBeam[]) {
+  const loudestSourceSum = Math.max(
+    ...config.room.sources.map((src) => Utils.sumFrequencyMap(Utils.mapFrequencyMap(src.volume, Utils.dB2Pa)))
+  );
+  return soundBeams.map((beam) => {
+    const opacity = Utils.sumFrequencyMap(beam.soundPressure) / loudestSourceSum;
+    console.log(opacity);
+    const color = new three.Color().setHSL(0, 1, opacity * 0.5);
+    const lineGeometry = new three.BufferGeometry().setFromPoints([beam.from, beam.to]);
+    const lineMaterial = new three.LineBasicMaterial({ color: color });
+    const line = new three.Line(lineGeometry, lineMaterial);
+    return line;
+  });
 }

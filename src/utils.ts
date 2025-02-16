@@ -20,8 +20,12 @@ export default class Utils {
     return this.mapFrequencyMap(fm, (freq, val) => val * fac);
   }
 
-  static factorFrequencyMapEntries(fm: FrequencyMap, fm2: FrequencyMap) {
-    return this.mapFrequencyMap(fm, (freq, val) => val * (fm2[freq] ?? 1));
+  static factorFrequencyMapEntries(fm: FrequencyMap, fm2?: FrequencyMap) {
+    return this.mapFrequencyMap(fm, (freq, val) => val * (fm2?.[freq] ?? 1.0));
+  }
+
+  static sumFrequencyMap(fm: FrequencyMap) {
+    return Object.values(fm).reduce((sum, cur) => sum + cur, 0);
   }
 
   static Pt2Vector3(pt: Pt) {
