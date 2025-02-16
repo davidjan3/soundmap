@@ -19,3 +19,12 @@ export type Room = {
   sources: Source[];
   walls: Wall[];
 };
+
+export type Settings = {
+  sourceResolution?: number;
+};
+
+export type Config = {
+  settings?: Settings;
+  room: Room;
+};
