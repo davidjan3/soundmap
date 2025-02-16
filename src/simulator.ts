@@ -14,7 +14,7 @@ const SOURCE_RADIUS = 0.2;
 const sources = loadSources();
 scene.add(...sources);
 
-const soundBeams = propagateSoundBeams();
+const soundBeams = generateSoundBeams();
 scene.add(...renderBeams(soundBeams));
 
 const camera = new three.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 100);
@@ -113,7 +113,7 @@ function loadSources() {
   });
 }
 
-function propagateSoundBeams() {
+function generateSoundBeams() {
   const soundBeams: SoundBeam[] = [];
   config.room.sources.forEach((src, sourceIndex) => {
     const srcPosition = Utils.Pt2Vector3(src.position);
@@ -127,67 +127,54 @@ function propagateSoundBeams() {
       for (let y = 0; y <= thetaLength * resolution; y++) {
         let soundPressure = Utils.mapFrequencyMap(srcSoundPressure, (f, v) => v);
         const theta = y * (Math.PI / 360) * (1 / resolution);
-        const direction = srcDirection
+        let direction = srcDirection
           .clone()
           .applyEuler(new three.Euler(0, theta, 0))
           .applyAxisAngle(srcDirection, phi)
           .normalize();
-        const position = srcPosition.clone().add(direction.clone().multiplyScalar(SOURCE_RADIUS));
-        soundBeams.push(...propagateSoundBeam(sourceIndex, position, direction, soundPressure));
+        let position = srcPosition.clone().add(direction.clone().multiplyScalar(SOURCE_RADIUS));
+
+        while (true) {
+          if (Utils.sumFrequencyMap(soundPressure) < PA_REF) break;
+          const raycaster = new three.Raycaster(position, direction, 0.001, MAX_LEN);
+          raycaster.layers.set(1);
+          const intersections = raycaster.intersectObjects(scene.children);
+          if (!intersections.length) {
+            soundBeams.push({
+              sourceIndex: sourceIndex,
+              soundPressure: soundPressure,
+              from: position,
+              to: position.clone().add(direction.normalize().multiplyScalar(MAX_LEN)),
+            });
+            break;
+          }
+          const intersection = intersections[0];
+          const intersectionPoint = intersection.point;
+          soundBeams.push({
+            sourceIndex: sourceIndex,
+            soundPressure: soundPressure,
+            from: position,
+            to: intersectionPoint,
+          });
+
+          const wall = intersection.object.userData as Wall;
+          const soundReflexionFac = wall.soundReflexionFac || {};
+          Object.keys(soundPressure).forEach((frequency) => {
+            if (!(frequency in soundReflexionFac) || soundReflexionFac[frequency] === 1) {
+              soundReflexionFac[frequency] = 0.75;
+            }
+          });
+          soundPressure = Utils.factorFrequencyMapEntries(soundPressure, soundReflexionFac);
+          direction = direction
+            .clone()
+            .sub(intersection.normal.multiplyScalar(2 * direction.dot(intersection.normal)))
+            .normalize();
+          position = intersectionPoint;
+        }
       }
     }
   });
   return soundBeams;
-}
-
-function infiniteSoundBeam(
-  sourceIndex: number,
-  position: three.Vector3,
-  direction: three.Vector3,
-  soundPressure: FrequencyMap
-) {
-  const beam: SoundBeam = {
-    sourceIndex: sourceIndex,
-    soundPressure: soundPressure,
-    from: position,
-    to: position.clone().add(direction.normalize().multiplyScalar(MAX_LEN)),
-  };
-  return beam;
-}
-
-function propagateSoundBeam(
-  sourceIndex: number,
-  position: three.Vector3,
-  direction: three.Vector3,
-  soundPressure: FrequencyMap
-) {
-  if (Utils.sumFrequencyMap(soundPressure) < PA_REF) return [];
-  const raycaster = new three.Raycaster(position, direction, 0.001, MAX_LEN);
-  raycaster.layers.set(1);
-  const intersections = raycaster.intersectObjects(scene.children);
-  if (!intersections.length) return [infiniteSoundBeam(sourceIndex, position, direction, soundPressure)];
-  const intersection = intersections[0];
-  const intersectionPoint = intersection.point;
-  const beam: SoundBeam = {
-    sourceIndex: sourceIndex,
-    soundPressure: soundPressure,
-    from: position,
-    to: intersectionPoint,
-  };
-
-  const wall = intersection.object.userData as Wall;
-  const soundReflexionFac = wall.soundReflexionFac || {};
-  Object.keys(soundPressure).forEach((frequency) => {
-    if (!(frequency in soundReflexionFac) || soundReflexionFac[frequency] === 1) {
-      soundReflexionFac[frequency] = 0.75;
-    }
-  });
-  const reflectedSoundPressure = Utils.factorFrequencyMapEntries(soundPressure, soundReflexionFac);
-  const reflectedDirection = direction
-    .clone()
-    .sub(intersection.normal.multiplyScalar(2 * direction.dot(intersection.normal)))
-    .normalize();
-  return [beam, ...propagateSoundBeam(sourceIndex, intersectionPoint, reflectedDirection, reflectedSoundPressure)];
 }
 
 function renderBeams(soundBeams: SoundBeam[]) {
