@@ -10,6 +10,7 @@ const scene = new three.Scene();
 const walls = loadWalls();
 scene.add(...walls);
 
+const SOURCE_RADIUS = 0.2;
 const sources = loadSources();
 scene.add(...sources);
 
@@ -52,8 +53,8 @@ window.addEventListener(
 let angle = 0;
 const cameraDistance = 8;
 
-function animate() {
-  angle += 0.005;
+function animate(time) {
+  angle = time * 0.0005;
   camera.position.x = center.x + Math.cos(angle) * cameraDistance;
   camera.position.y = 5;
   camera.position.z = center.z + Math.sin(angle) * cameraDistance;
@@ -80,8 +81,8 @@ function loadWalls() {
 
     const material = new three.MeshStandardMaterial({
       color: 0xffffff,
-      opacity: 0.2,
-      transparent: true,
+      // opacity: 0.2,
+      // transparent: true,
       side: three.DoubleSide,
       wireframe: true,
     });
@@ -96,7 +97,7 @@ function loadSources() {
   return config.room.sources.map((src) => {
     const thetaLength = src.spreadAngle ? src.spreadAngle * (Math.PI / 360) : Math.PI / 2;
     const heightSegments = Math.ceil((thetaLength / Math.PI) * 32);
-    const geometry = new three.SphereGeometry(0.2, 32, heightSegments, 0, Math.PI * 2, 0, thetaLength);
+    const geometry = new three.SphereGeometry(SOURCE_RADIUS, 32, heightSegments, 0, Math.PI * 2, 0, thetaLength);
     const material = new three.MeshStandardMaterial({
       color: 0xff0000,
       side: three.DoubleSide,
@@ -115,6 +116,7 @@ function loadSources() {
 function propagateSoundBeams() {
   const soundBeams: SoundBeam[] = [];
   config.room.sources.forEach((src, sourceIndex) => {
+    const srcPosition = Utils.Pt2Vector3(src.position);
     const srcDirection = src.direction ? Utils.Pt2Vector3(src.direction) : new three.Vector3();
     const thetaLength = src.spreadAngle ? src.spreadAngle : 180;
     const resolution = config.settings?.sourceResolution ?? 1;
@@ -125,12 +127,13 @@ function propagateSoundBeams() {
       for (let y = 0; y <= thetaLength * resolution; y++) {
         let soundPressure = Utils.mapFrequencyMap(srcSoundPressure, (f, v) => v);
         const theta = y * (Math.PI / 360) * (1 / resolution);
-        console.log(theta);
         const direction = srcDirection
           .clone()
           .applyEuler(new three.Euler(0, theta, 0))
-          .applyAxisAngle(srcDirection, phi);
-        soundBeams.push(...propagateSoundBeam(sourceIndex, Utils.Pt2Vector3(src.position), direction, soundPressure));
+          .applyAxisAngle(srcDirection, phi)
+          .normalize();
+        const position = srcPosition.clone().add(direction.clone().multiplyScalar(SOURCE_RADIUS));
+        soundBeams.push(...propagateSoundBeam(sourceIndex, position, direction, soundPressure));
       }
     }
   });
@@ -147,7 +150,7 @@ function infiniteSoundBeam(
     sourceIndex: sourceIndex,
     soundPressure: soundPressure,
     from: position,
-    to: position.add(direction.normalize().multiplyScalar(MAX_LEN)),
+    to: position.clone().add(direction.normalize().multiplyScalar(MAX_LEN)),
   };
   return beam;
 }
@@ -159,15 +162,11 @@ function propagateSoundBeam(
   soundPressure: FrequencyMap
 ) {
   if (Utils.sumFrequencyMap(soundPressure) < PA_REF) return [];
-  const raycaster = new three.Raycaster(position, direction.normalize());
+  const raycaster = new three.Raycaster(position, direction, 0.001, MAX_LEN);
   raycaster.layers.set(1);
   const intersections = raycaster.intersectObjects(scene.children);
   if (!intersections.length) return [infiniteSoundBeam(sourceIndex, position, direction, soundPressure)];
-  let intersection = intersections[0];
-  if (intersection.point.equals(position)) {
-    if (intersections.length === 1) return [];
-    intersection = intersections[1];
-  }
+  const intersection = intersections[0];
   const intersectionPoint = intersection.point;
   const beam: SoundBeam = {
     sourceIndex: sourceIndex,
@@ -186,7 +185,8 @@ function propagateSoundBeam(
   const reflectedSoundPressure = Utils.factorFrequencyMapEntries(soundPressure, soundReflexionFac);
   const reflectedDirection = direction
     .clone()
-    .sub(intersection.normal.multiplyScalar(2 * direction.dot(intersection.normal)));
+    .sub(intersection.normal.multiplyScalar(2 * direction.dot(intersection.normal)))
+    .normalize();
   return [beam, ...propagateSoundBeam(sourceIndex, intersectionPoint, reflectedDirection, reflectedSoundPressure)];
 }
 
