@@ -5,8 +5,8 @@ export type FrequencyMap = { [frequency: number]: number };
 export type Source = {
   position: Pt;
   volume?: FrequencyMap;
-  degreeRangeHorizontal?: [number, number];
-  degreeRangeVertical?: [number, number];
+  spreadAngle?: number;
+  direction?: Pt;
 };
 
 export type Wall = {

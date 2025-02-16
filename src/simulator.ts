@@ -1,5 +1,5 @@
-import { SoundBeam } from "soundbeam";
 import { config } from "./config";
+import SoundBeam, { MAX_LEN } from "./soundbeam";
 import Utils, { PA_REF } from "./utils";
 import { FrequencyMap, Wall } from "configscheme";
 import * as three from "three";
@@ -94,27 +94,20 @@ function loadWalls() {
 
 function loadSources() {
   return config.room.sources.map((src) => {
-    const phiStart = src.degreeRangeHorizontal ? src.degreeRangeHorizontal[0] * (Math.PI / 180) : 0;
-    const phiLength = src.degreeRangeHorizontal ? src.degreeRangeHorizontal[1] * (Math.PI / 180) : Math.PI * 2;
-    const thetaStart = src.degreeRangeVertical ? src.degreeRangeVertical[0] * (Math.PI / 180) : 0;
-    const thetaLength = src.degreeRangeVertical ? src.degreeRangeVertical[1] * (Math.PI / 180) : Math.PI;
-    const widthSegments = Math.ceil((phiLength / (Math.PI * 2)) * 32);
-    const heightSegments = Math.ceil((thetaLength / Math.PI) * 16);
-    const geometry = new three.SphereGeometry(
-      0.2,
-      widthSegments,
-      heightSegments,
-      phiStart,
-      phiLength,
-      thetaStart,
-      thetaLength
-    );
+    const thetaLength = src.spreadAngle ? src.spreadAngle * (Math.PI / 360) : Math.PI / 2;
+    const heightSegments = Math.ceil((thetaLength / Math.PI) * 32);
+    const geometry = new three.SphereGeometry(0.2, 32, heightSegments, 0, Math.PI * 2, 0, thetaLength);
     const material = new three.MeshStandardMaterial({
       color: 0xff0000,
       side: three.DoubleSide,
     });
     const mesh = new three.Mesh(geometry, material);
     mesh.position.copy(Utils.Pt2Vector3(src.position));
+    if (src.direction) {
+      const up = new three.Vector3(0, 1, 0);
+      const direction = Utils.Pt2Vector3(src.direction);
+      mesh.quaternion.setFromUnitVectors(up, direction.normalize());
+    }
     return mesh;
   });
 }
@@ -122,24 +115,41 @@ function loadSources() {
 function propagateSoundBeams() {
   const soundBeams: SoundBeam[] = [];
   config.room.sources.forEach((src, sourceIndex) => {
-    const phiStart = src.degreeRangeHorizontal ? src.degreeRangeHorizontal[0] * (Math.PI / 180) : 0;
-    const phiLength = src.degreeRangeHorizontal ? src.degreeRangeHorizontal[1] : 360;
-    const thetaStart = src.degreeRangeVertical ? src.degreeRangeVertical[0] * (Math.PI / 180) : 0;
-    const thetaLength = src.degreeRangeVertical ? src.degreeRangeVertical[1] : 180;
+    const srcDirection = src.direction ? Utils.Pt2Vector3(src.direction) : new three.Vector3();
+    const thetaLength = src.spreadAngle ? src.spreadAngle : 180;
     const resolution = config.settings?.sourceResolution ?? 1;
-    const totalBeams = Math.floor(phiLength * resolution + 1) * Math.floor(thetaLength * resolution + 1);
+    const totalBeams = Math.floor(360 * resolution) * Math.floor(thetaLength * resolution + 1);
     const srcSoundPressure = Utils.mapFrequencyMap(src.volume, Utils.dB2Pa);
-    for (let x = 0; x <= phiLength * resolution; x++) {
-      const phi = phiStart + x * (Math.PI / 180) * (1 / resolution);
+    for (let x = 0; x < 360 * resolution; x++) {
+      const phi = x * (Math.PI / 180) * (1 / resolution);
       for (let y = 0; y <= thetaLength * resolution; y++) {
         let soundPressure = Utils.mapFrequencyMap(srcSoundPressure, (f, v) => v);
-        const theta = thetaStart + y * (Math.PI / 180) * (1 / resolution);
-        const direction = new three.Vector3(1, 0, 0).applyEuler(new three.Euler(phi, theta, 0, "XYZ"));
+        const theta = y * (Math.PI / 360) * (1 / resolution);
+        console.log(theta);
+        const direction = srcDirection
+          .clone()
+          .applyEuler(new three.Euler(0, theta, 0))
+          .applyAxisAngle(srcDirection, phi);
         soundBeams.push(...propagateSoundBeam(sourceIndex, Utils.Pt2Vector3(src.position), direction, soundPressure));
       }
     }
   });
   return soundBeams;
+}
+
+function infiniteSoundBeam(
+  sourceIndex: number,
+  position: three.Vector3,
+  direction: three.Vector3,
+  soundPressure: FrequencyMap
+) {
+  const beam: SoundBeam = {
+    sourceIndex: sourceIndex,
+    soundPressure: soundPressure,
+    from: position,
+    to: position.add(direction.normalize().multiplyScalar(MAX_LEN)),
+  };
+  return beam;
 }
 
 function propagateSoundBeam(
@@ -149,10 +159,10 @@ function propagateSoundBeam(
   soundPressure: FrequencyMap
 ) {
   if (Utils.sumFrequencyMap(soundPressure) < PA_REF) return [];
-  const raycaster = new three.Raycaster(position, direction);
+  const raycaster = new three.Raycaster(position, direction.normalize());
   raycaster.layers.set(1);
   const intersections = raycaster.intersectObjects(scene.children);
-  if (!intersections.length) return [];
+  if (!intersections.length) return [infiniteSoundBeam(sourceIndex, position, direction, soundPressure)];
   let intersection = intersections[0];
   if (intersection.point.equals(position)) {
     if (intersections.length === 1) return [];
@@ -174,7 +184,9 @@ function propagateSoundBeam(
     }
   });
   const reflectedSoundPressure = Utils.factorFrequencyMapEntries(soundPressure, soundReflexionFac);
-  const reflectedDirection = intersection.normal.add(direction);
+  const reflectedDirection = direction
+    .clone()
+    .sub(intersection.normal.multiplyScalar(2 * direction.dot(intersection.normal)));
   return [beam, ...propagateSoundBeam(sourceIndex, intersectionPoint, reflectedDirection, reflectedSoundPressure)];
 }
 

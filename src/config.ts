@@ -9,12 +9,14 @@ export const config: Config = {
       {
         position: [-3.6, 1.4, 6.5],
         volume: { 200: 40 },
-        // degreeRangeVertical: [0, 90],
+        spreadAngle: 120,
+        direction: [1, 0, -0.4],
       },
       {
         position: [-3.6, 1.5, 4.5],
         volume: { 200: 40 },
-        // degreeRangeHorizontal: [90, 180],
+        spreadAngle: 120,
+        direction: [1, 0, 0.4],
       },
     ],
     walls: [
