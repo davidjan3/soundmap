@@ -15,7 +15,7 @@ const sources = loadSources();
 scene.add(...sources);
 
 const soundBeams = generateSoundBeams();
-scene.add(...renderBeams(soundBeams));
+generateHeatmap(soundBeams).forEach((mesh) => scene.add(mesh));
 
 const camera = new three.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.z = -5;
@@ -101,6 +101,7 @@ function loadSources() {
     const material = new three.MeshStandardMaterial({
       color: 0xff0000,
       side: three.DoubleSide,
+      emissive: 0xff0000,
     });
     const mesh = new three.Mesh(geometry, material);
     mesh.position.copy(Utils.Pt2Vector3(src.position));
@@ -177,16 +178,83 @@ function generateSoundBeams() {
   return soundBeams;
 }
 
-function renderBeams(soundBeams: SoundBeam[]) {
+function generateHeatmap(soundBeams: SoundBeam[]) {
   const loudestSourceSum = Math.max(
     ...config.room.sources.map((src) => Utils.sumFrequencyMap(Utils.mapFrequencyMap(src.volume, Utils.dB2Pa)))
   );
-  return soundBeams.map((beam) => {
-    const opacity = Utils.sumFrequencyMap(beam.soundPressure) / loudestSourceSum;
-    // const color = new three.Color().setHSL(0, 1, opacity * 0.5);
-    const lineGeometry = new three.BufferGeometry().setFromPoints([beam.from, beam.to]);
-    const lineMaterial = new three.LineBasicMaterial({ color: 0xff0000, opacity: opacity, transparent: true });
-    const line = new three.Line(lineGeometry, lineMaterial);
-    return line;
+  const HEAT_MAP_STEP = 0.25;
+  const map: { [index: string]: number } = {};
+  soundBeams.forEach((beam) => {
+    const volume = Utils.sumFrequencyMap(beam.soundPressure) / loudestSourceSum;
+    let travel = 0;
+    const totalDistance = beam.from.distanceTo(beam.to);
+
+    while (travel < totalDistance) {
+      const t = travel / totalDistance;
+      const position = beam.from.clone().lerp(beam.to, t);
+
+      const x = Math.floor(position.x / HEAT_MAP_STEP) * HEAT_MAP_STEP;
+      const y = Math.floor(position.y / HEAT_MAP_STEP) * HEAT_MAP_STEP;
+      const z = Math.floor(position.z / HEAT_MAP_STEP) * HEAT_MAP_STEP;
+
+      const key = `${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`;
+      if (!(key in map)) {
+        map[key] = 0;
+      }
+      map[key] += volume;
+
+      const direction = beam.to.clone().sub(beam.from).normalize();
+
+      const nextX =
+        direction.x > 0
+          ? (Math.floor(position.x / HEAT_MAP_STEP) + 1) * HEAT_MAP_STEP - position.x
+          : (Math.ceil(position.x / HEAT_MAP_STEP) - 1) * HEAT_MAP_STEP - position.x;
+
+      const nextY =
+        direction.y > 0
+          ? (Math.floor(position.y / HEAT_MAP_STEP) + 1) * HEAT_MAP_STEP - position.y
+          : (Math.ceil(position.y / HEAT_MAP_STEP) - 1) * HEAT_MAP_STEP - position.y;
+
+      const nextZ =
+        direction.z > 0
+          ? (Math.floor(position.z / HEAT_MAP_STEP) + 1) * HEAT_MAP_STEP - position.z
+          : (Math.ceil(position.z / HEAT_MAP_STEP) - 1) * HEAT_MAP_STEP - position.z;
+
+      const dx = direction.x !== 0 ? Math.abs(nextX / direction.x) : Infinity;
+      const dy = direction.y !== 0 ? Math.abs(nextY / direction.y) : Infinity;
+      const dz = direction.z !== 0 ? Math.abs(nextZ / direction.z) : Infinity;
+
+      const nextTravel = Math.min(dx, dy, dz);
+
+      travel += nextTravel + 0.000001;
+    }
   });
+
+  const values = Object.values(map);
+  let max = values[0];
+  for (let i = 1; i < values.length; i++) {
+    if (values[i] > max) {
+      max = values[i];
+    }
+  }
+  Object.keys(map).forEach((key) => {
+    map[key] /= max;
+  });
+
+  return Object.entries(map)
+    .map(([key, value]) => {
+      const [x, y, z] = key.split(",").map((v) => Number(v));
+      const opacity = value;
+      if (opacity < 0.01) return null;
+      const geometry = new three.SphereGeometry(HEAT_MAP_STEP * 0.5);
+      const material = new three.MeshBasicMaterial({
+        color: new three.Color(0xff0000),
+        transparent: true,
+        opacity: opacity,
+      });
+      const mesh = new three.Mesh(geometry, material);
+      mesh.position.set(x + HEAT_MAP_STEP / 2, y + HEAT_MAP_STEP / 2, z + HEAT_MAP_STEP / 2);
+      return mesh;
+    })
+    .filter((mesh) => mesh !== null);
 }
