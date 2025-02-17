@@ -25,16 +25,6 @@ const center = new three.Vector3(0, 0, 0);
 mergedRoomGeometry.boundingBox.getCenter(center);
 camera.lookAt(center);
 
-const directionalLight0 = new three.DirectionalLight(0xffffff, 0.5);
-directionalLight0.position.set(2, 10, 5);
-directionalLight0.lookAt(center);
-scene.add(directionalLight0);
-
-const directionalLight1 = new three.DirectionalLight(0xffffff, 0.5);
-directionalLight1.position.set(-2, 10, -5);
-directionalLight1.lookAt(center);
-scene.add(directionalLight1);
-
 const renderer = new three.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setAnimationLoop(animate);
@@ -80,9 +70,7 @@ function loadWalls() {
     geometry.computeVertexNormals();
 
     const material = new three.MeshStandardMaterial({
-      color: 0xffffff,
-      // opacity: 0.2,
-      // transparent: true,
+      emissive: 0xffffff,
       side: three.DoubleSide,
       wireframe: true,
     });
@@ -99,9 +87,8 @@ function loadSources() {
     const heightSegments = Math.ceil((thetaLength / Math.PI) * 32);
     const geometry = new three.SphereGeometry(SOURCE_RADIUS, 32, heightSegments, 0, Math.PI * 2, 0, thetaLength);
     const material = new three.MeshStandardMaterial({
-      color: 0xff0000,
       side: three.DoubleSide,
-      emissive: 0xff0000,
+      emissive: 0xffffff,
     });
     const mesh = new three.Mesh(geometry, material);
     mesh.position.copy(Utils.Pt2Vector3(src.position));
@@ -115,6 +102,7 @@ function loadSources() {
 }
 
 function generateSoundBeams() {
+  const BOUNCES = 100;
   const soundBeams: SoundBeam[] = [];
   config.room.sources.forEach((src, sourceIndex) => {
     const srcPosition = Utils.Pt2Vector3(src.position);
@@ -122,7 +110,7 @@ function generateSoundBeams() {
     const thetaLength = src.spreadAngle ? src.spreadAngle : 180;
     const resolution = config.settings?.sourceResolution ?? 1;
     const totalBeams = Math.floor(360 * resolution) * Math.floor(thetaLength * resolution + 1);
-    const srcSoundPressure = Utils.mapFrequencyMap(src.volume, Utils.dB2Pa);
+    const srcSoundPressure = Utils.mapFrequencyMap(src.volume, (f, v) => Utils.dB2Pa(v));
     for (let x = 0; x < 360 * resolution; x++) {
       const phi = x * (Math.PI / 180) * (1 / resolution);
       for (let y = 0; y <= thetaLength * resolution; y++) {
@@ -134,10 +122,10 @@ function generateSoundBeams() {
           .applyAxisAngle(srcDirection, phi)
           .normalize();
         let position = srcPosition.clone().add(direction.clone().multiplyScalar(SOURCE_RADIUS));
-
-        while (true) {
+        let bounces = 0;
+        while (bounces < BOUNCES) {
           if (Utils.sumFrequencyMap(soundPressure) < PA_REF) break;
-          const raycaster = new three.Raycaster(position, direction, 0.001, MAX_LEN);
+          const raycaster = new three.Raycaster(position, direction, 0.000001, MAX_LEN);
           raycaster.layers.set(1);
           const intersections = raycaster.intersectObjects(scene.children);
           if (!intersections.length) {
@@ -171,6 +159,7 @@ function generateSoundBeams() {
             .sub(intersection.normal.multiplyScalar(2 * direction.dot(intersection.normal)))
             .normalize();
           position = intersectionPoint;
+          bounces++;
         }
       }
     }
@@ -179,13 +168,10 @@ function generateSoundBeams() {
 }
 
 function generateHeatmap(soundBeams: SoundBeam[]) {
-  const loudestSourceSum = Math.max(
-    ...config.room.sources.map((src) => Utils.sumFrequencyMap(Utils.mapFrequencyMap(src.volume, Utils.dB2Pa)))
-  );
   const HEAT_MAP_STEP = 0.25;
   const map: { [index: string]: number } = {};
   soundBeams.forEach((beam) => {
-    const volume = Utils.sumFrequencyMap(beam.soundPressure) / loudestSourceSum;
+    const volume = Utils.sumFrequencyMap(beam.soundPressure);
     let travel = 0;
     const totalDistance = beam.from.distanceTo(beam.to);
 
