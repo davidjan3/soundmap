@@ -3,6 +3,8 @@ import { Config, materials, noises } from "./configscheme";
 export const config: Config = {
   settings: {
     sourceResolution: 0.1,
+    maxBounces: 100,
+    heatMapStep: 0.25,
   },
   room: {
     sources: [

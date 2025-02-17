@@ -102,7 +102,7 @@ function loadSources() {
 }
 
 function generateSoundBeams() {
-  const BOUNCES = 100;
+  const maxBounces = config.settings?.maxBounces ?? 10;
   const soundBeams: SoundBeam[] = [];
   config.room.sources.forEach((src, sourceIndex) => {
     const srcPosition = Utils.Pt2Vector3(src.position);
@@ -123,7 +123,7 @@ function generateSoundBeams() {
           .normalize();
         let position = srcPosition.clone().add(direction.clone().multiplyScalar(SOURCE_RADIUS));
         let bounces = 0;
-        while (bounces < BOUNCES) {
+        while (bounces < maxBounces) {
           if (Utils.sumFrequencyMap(soundPressure) < PA_REF) break;
           const raycaster = new three.Raycaster(position, direction, 0.000001, MAX_LEN);
           raycaster.layers.set(1);
@@ -168,10 +168,9 @@ function generateSoundBeams() {
 }
 
 function generateHeatmap(soundBeams: SoundBeam[]) {
-  const HEAT_MAP_STEP = 0.25;
-  const map: { [index: string]: number } = {};
+  const heatMapStep = config.settings?.heatMapStep ?? 0.25;
+  const map: { [index: string]: { avgFrequency: number; avgPressure: number; count: number } } = {};
   soundBeams.forEach((beam) => {
-    const volume = Utils.sumFrequencyMap(beam.soundPressure);
     let travel = 0;
     const totalDistance = beam.from.distanceTo(beam.to);
 
@@ -179,32 +178,35 @@ function generateHeatmap(soundBeams: SoundBeam[]) {
       const t = travel / totalDistance;
       const position = beam.from.clone().lerp(beam.to, t);
 
-      const x = Math.floor(position.x / HEAT_MAP_STEP) * HEAT_MAP_STEP;
-      const y = Math.floor(position.y / HEAT_MAP_STEP) * HEAT_MAP_STEP;
-      const z = Math.floor(position.z / HEAT_MAP_STEP) * HEAT_MAP_STEP;
+      const x = Math.floor(position.x / heatMapStep) * heatMapStep;
+      const y = Math.floor(position.y / heatMapStep) * heatMapStep;
+      const z = Math.floor(position.z / heatMapStep) * heatMapStep;
 
       const key = `${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`;
       if (!(key in map)) {
-        map[key] = 0;
+        map[key] = { avgFrequency: 0, avgPressure: 0, count: 0 };
       }
-      map[key] += volume;
+      const averages = Utils.avgFrequencyMap(beam.soundPressure);
+      map[key].avgFrequency += averages.avgFrequency * averages.avgPressure;
+      map[key].avgPressure += averages.avgPressure;
+      map[key].count += 1;
 
       const direction = beam.to.clone().sub(beam.from).normalize();
 
       const nextX =
         direction.x > 0
-          ? (Math.floor(position.x / HEAT_MAP_STEP) + 1) * HEAT_MAP_STEP - position.x
-          : (Math.ceil(position.x / HEAT_MAP_STEP) - 1) * HEAT_MAP_STEP - position.x;
+          ? (Math.floor(position.x / heatMapStep) + 1) * heatMapStep - position.x
+          : (Math.ceil(position.x / heatMapStep) - 1) * heatMapStep - position.x;
 
       const nextY =
         direction.y > 0
-          ? (Math.floor(position.y / HEAT_MAP_STEP) + 1) * HEAT_MAP_STEP - position.y
-          : (Math.ceil(position.y / HEAT_MAP_STEP) - 1) * HEAT_MAP_STEP - position.y;
+          ? (Math.floor(position.y / heatMapStep) + 1) * heatMapStep - position.y
+          : (Math.ceil(position.y / heatMapStep) - 1) * heatMapStep - position.y;
 
       const nextZ =
         direction.z > 0
-          ? (Math.floor(position.z / HEAT_MAP_STEP) + 1) * HEAT_MAP_STEP - position.z
-          : (Math.ceil(position.z / HEAT_MAP_STEP) - 1) * HEAT_MAP_STEP - position.z;
+          ? (Math.floor(position.z / heatMapStep) + 1) * heatMapStep - position.z
+          : (Math.ceil(position.z / heatMapStep) - 1) * heatMapStep - position.z;
 
       const dx = direction.x !== 0 ? Math.abs(nextX / direction.x) : Infinity;
       const dy = direction.y !== 0 ? Math.abs(nextY / direction.y) : Infinity;
@@ -217,29 +219,32 @@ function generateHeatmap(soundBeams: SoundBeam[]) {
   });
 
   const values = Object.values(map);
-  let max = values[0];
+  let max = values[0].avgPressure;
   for (let i = 1; i < values.length; i++) {
-    if (values[i] > max) {
-      max = values[i];
+    if (values[i].avgPressure > max) {
+      max = values[i].avgPressure;
     }
   }
   Object.keys(map).forEach((key) => {
-    map[key] /= max;
+    map[key].avgPressure /= max;
+    map[key].avgFrequency /= map[key].count;
+    map[key].avgFrequency /= map[key].avgPressure;
   });
 
   return Object.entries(map)
-    .map(([key, value]) => {
+    .map(([key, averages]) => {
       const [x, y, z] = key.split(",").map((v) => Number(v));
-      const opacity = value;
+      const opacity = averages.avgPressure;
       if (opacity < 0.01) return null;
-      const geometry = new three.SphereGeometry(HEAT_MAP_STEP * 0.5);
+      const colorLerp = new three.Color(0xff0000).lerp(new three.Color(0x00ffff), averages.avgFrequency / 4000);
+      const geometry = new three.SphereGeometry(heatMapStep * 0.5);
       const material = new three.MeshBasicMaterial({
-        color: new three.Color(0xff0000),
+        color: colorLerp,
         transparent: true,
         opacity: opacity,
       });
       const mesh = new three.Mesh(geometry, material);
-      mesh.position.set(x + HEAT_MAP_STEP / 2, y + HEAT_MAP_STEP / 2, z + HEAT_MAP_STEP / 2);
+      mesh.position.set(x + heatMapStep / 2, y + heatMapStep / 2, z + heatMapStep / 2);
       return mesh;
     })
     .filter((mesh) => mesh !== null);

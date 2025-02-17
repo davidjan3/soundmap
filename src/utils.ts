@@ -28,6 +28,13 @@ export default class Utils {
     return Object.values(fm).reduce((sum, cur) => sum + cur, 0);
   }
 
+  static avgFrequencyMap(fm: FrequencyMap) {
+    const keys = Object.keys(fm);
+    const avgVolume = this.sumFrequencyMap(fm) / keys.length;
+    const avgFrequency = keys.reduce((sum, cur) => sum + Number(cur) * fm[cur], 0) / (keys.length * avgVolume);
+    return { avgFrequency, avgPressure: avgVolume };
+  }
+
   static Pt2Vector3(pt: Pt) {
     return new three.Vector3(...pt);
   }

@@ -22,6 +22,8 @@ export type Room = {
 
 export type Settings = {
   sourceResolution?: number;
+  maxBounces?: number;
+  heatMapStep?: number;
 };
 
 export type Config = {
@@ -39,7 +41,7 @@ export const materials: {
     soundReflexionFac: { 125: 0.99, 250: 0.99, 500: 0.99, 1000: 0.98, 2000: 0.98, 4000: 0.98 },
   },
   wallpaper: {
-    soundReflexionFac: { 125: 0.98, 250: 0.97, 500: 0.96, 1000: 0.95, 2000: 0.93, 4000: 0.92 },
+    soundReflexionFac: { 125: 0.98, 250: 0.97, 500: 0.96, 1000: 0.4, 2000: 0.4, 4000: 0.4 },
   },
   glass: {
     soundReflexionFac: { 125: 0.9, 250: 0.94, 500: 0.96, 1000: 0.97, 2000: 0.98, 4000: 0.98 },
