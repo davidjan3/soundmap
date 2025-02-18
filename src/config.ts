@@ -21,6 +21,15 @@ export const config: Config = {
         direction: [1, 0, 0.4],
       },
     ],
+    objects: [
+      {
+        path: "/3d-model.obj",
+        position: [-1.5, 0.25, 5.5],
+        scale: [0.0012, 0.0012, 0.0012],
+        rotation: [0, 180, 0],
+        soundReflexionFac: materials.furniture_textile.soundReflexionFac,
+      },
+    ],
     walls: [
       {
         soundReflexionFac: materials.wallpaper.soundReflexionFac,

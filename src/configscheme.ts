@@ -7,17 +7,29 @@ export type Source = {
   volume?: FrequencyMap;
   spreadAngle?: number;
   direction?: Pt;
+  radius?: number;
 };
 
-export type Wall = {
-  vertices: Pt[];
+type SoundObstruction = {
   soundReflexionFac?: FrequencyMap;
   soundTransmissionFac?: FrequencyMap;
+};
+
+export type Wall = SoundObstruction & {
+  vertices: Pt[];
+};
+
+export type Object = SoundObstruction & {
+  path: string;
+  position: Pt;
+  rotation?: Pt;
+  scale?: Pt;
 };
 
 export type Room = {
   sources: Source[];
   walls: Wall[];
+  objects?: Object[];
 };
 
 export type Settings = {
@@ -31,12 +43,7 @@ export type Config = {
   room: Room;
 };
 
-export const materials: {
-  [index: string]: {
-    soundReflexionFac?: FrequencyMap;
-    soundTransmissionFac?: FrequencyMap;
-  };
-} = {
+export const materials = {
   concrete: {
     soundReflexionFac: { 125: 0.99, 250: 0.99, 500: 0.99, 1000: 0.98, 2000: 0.98, 4000: 0.98 },
   },

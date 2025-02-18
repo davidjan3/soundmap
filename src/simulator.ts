@@ -1,49 +1,56 @@
+import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
 import { config } from "./config";
 import SoundBeam, { MAX_LEN } from "./soundbeam";
 import Utils, { PA_REF } from "./utils";
-import { FrequencyMap, Wall } from "configscheme";
+import { Pt, Wall } from "configscheme";
 import * as three from "three";
 import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUtils";
 
-const scene = new three.Scene();
+main();
 
-const walls = loadWalls();
-scene.add(...walls);
+async function main() {
+  const scene = new three.Scene();
 
-const SOURCE_RADIUS = 0.2;
-const sources = loadSources();
-scene.add(...sources);
+  const walls = loadWalls();
+  scene.add(...walls);
 
-const soundBeams = generateSoundBeams();
-generateHeatmap(soundBeams).forEach((mesh) => scene.add(mesh));
+  const objects = await loadObjects();
+  scene.add(...objects);
 
-const camera = new three.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.z = -5;
-const mergedRoomGeometry = BufferGeometryUtils.mergeGeometries(walls.map((obj) => obj.geometry));
-mergedRoomGeometry.computeBoundingBox();
-const center = new three.Vector3(0, 0, 0);
-mergedRoomGeometry.boundingBox.getCenter(center);
-camera.lookAt(center);
+  const sources = loadSources();
+  scene.add(...sources);
 
-const renderer = new three.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setAnimationLoop(animate);
-document.body.appendChild(renderer.domElement);
-window.addEventListener(
-  "resize",
-  () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
+  const soundBeams = generateSoundBeams(scene.children);
+  generateHeatmap(soundBeams).forEach((mesh) => scene.add(mesh));
 
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  },
-  false
-);
+  const camera = new three.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 100);
+  camera.position.z = -5;
+  const mergedRoomGeometry = BufferGeometryUtils.mergeGeometries(walls.map((obj) => obj.geometry));
+  mergedRoomGeometry.computeBoundingBox();
+  const center = new three.Vector3(0, 0, 0);
+  mergedRoomGeometry.boundingBox.getCenter(center);
+  camera.lookAt(center);
+
+  const renderer = new three.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+
+  const cameraDistance = 8;
+  renderer.setAnimationLoop((time) => animate(time, camera, renderer, scene, center, cameraDistance));
+  document.body.appendChild(renderer.domElement);
+  window.addEventListener(
+    "resize",
+    () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    },
+    false
+  );
+}
 
 let angle = 0;
-const cameraDistance = 8;
-
-function animate(time) {
+function animate(time, camera, renderer, scene, center, cameraDistance) {
   angle = time * 0.0005;
   camera.position.x = center.x + Math.cos(angle) * cameraDistance;
   camera.position.y = 5;
@@ -81,11 +88,48 @@ function loadWalls() {
   });
 }
 
+async function loadObjects() {
+  return (
+    Promise.all(
+      config.room.objects?.map(async (obj) => {
+        const loader = new OBJLoader();
+        const data = await (await fetch(obj.path)).text();
+        const group = loader.parse(data);
+
+        const geometries = [];
+        group.traverse((child) => {
+          if (child instanceof three.Mesh) {
+            geometries.push(child.geometry);
+          }
+        });
+
+        const mergedGeometry = BufferGeometryUtils.mergeGeometries(geometries);
+        const material = new three.MeshStandardMaterial({
+          emissive: 0xffffff,
+          side: three.DoubleSide,
+        });
+        const mesh = new three.Mesh(mergedGeometry, material);
+        mesh.position.set(...obj.position);
+        if (obj.rotation) {
+          mesh.rotation.set(...(obj.rotation.map((v) => (v * Math.PI) / 180) as Pt));
+        }
+        if (obj.scale) {
+          mesh.scale.set(...obj.scale);
+        }
+        mesh.updateMatrixWorld();
+        mesh.userData = obj;
+        mesh.layers.enable(1);
+        return mesh;
+      })
+    ) || []
+  );
+}
+
 function loadSources() {
   return config.room.sources.map((src) => {
     const thetaLength = src.spreadAngle ? src.spreadAngle * (Math.PI / 360) : Math.PI / 2;
     const heightSegments = Math.ceil((thetaLength / Math.PI) * 32);
-    const geometry = new three.SphereGeometry(SOURCE_RADIUS, 32, heightSegments, 0, Math.PI * 2, 0, thetaLength);
+    const geometry = new three.SphereGeometry(src.radius ?? 0.2, 32, heightSegments, 0, Math.PI * 2, 0, thetaLength);
     const material = new three.MeshStandardMaterial({
       side: three.DoubleSide,
       emissive: 0xffffff,
@@ -101,7 +145,7 @@ function loadSources() {
   });
 }
 
-function generateSoundBeams() {
+function generateSoundBeams(obstructions: three.Object3D[]) {
   const maxBounces = config.settings?.maxBounces ?? 10;
   const soundBeams: SoundBeam[] = [];
   config.room.sources.forEach((src, sourceIndex) => {
@@ -109,7 +153,6 @@ function generateSoundBeams() {
     const srcDirection = src.direction ? Utils.Pt2Vector3(src.direction) : new three.Vector3();
     const thetaLength = src.spreadAngle ? src.spreadAngle : 180;
     const resolution = config.settings?.sourceResolution ?? 1;
-    const totalBeams = Math.floor(360 * resolution) * Math.floor(thetaLength * resolution + 1);
     const srcSoundPressure = Utils.mapFrequencyMap(src.volume, (f, v) => Utils.dB2Pa(v));
     for (let x = 0; x < 360 * resolution; x++) {
       const phi = x * (Math.PI / 180) * (1 / resolution);
@@ -121,13 +164,13 @@ function generateSoundBeams() {
           .applyEuler(new three.Euler(0, theta, 0))
           .applyAxisAngle(srcDirection, phi)
           .normalize();
-        let position = srcPosition.clone().add(direction.clone().multiplyScalar(SOURCE_RADIUS));
+        let position = srcPosition.clone().add(direction.clone().multiplyScalar(src.radius ?? 0.2));
         let bounces = 0;
         while (bounces < maxBounces) {
           if (Utils.sumFrequencyMap(soundPressure) < PA_REF) break;
           const raycaster = new three.Raycaster(position, direction, 0.000001, MAX_LEN);
           raycaster.layers.set(1);
-          const intersections = raycaster.intersectObjects(scene.children);
+          const intersections = raycaster.intersectObjects(obstructions);
           if (!intersections.length) {
             soundBeams.push({
               sourceIndex: sourceIndex,
