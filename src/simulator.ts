@@ -212,7 +212,7 @@ function generateSoundBeams(obstructions: three.Object3D[]) {
 
 function generateHeatmap(soundBeams: SoundBeam[]) {
   const heatMapStep = config.settings?.heatMapStep ?? 0.25;
-  const map: { [index: string]: { avgFrequency: number; avgPressure: number; count: number } } = {};
+  const map: { [index: string]: { avgFrequency: number; avgPressure: number } } = {};
   soundBeams.forEach((beam) => {
     let travel = 0;
     const totalDistance = beam.from.distanceTo(beam.to);
@@ -225,14 +225,13 @@ function generateHeatmap(soundBeams: SoundBeam[]) {
       const y = Math.floor(position.y / heatMapStep) * heatMapStep;
       const z = Math.floor(position.z / heatMapStep) * heatMapStep;
 
-      const key = `${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`;
+      const key = `${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}`;
       if (!(key in map)) {
-        map[key] = { avgFrequency: 0, avgPressure: 0, count: 0 };
+        map[key] = { avgFrequency: 0, avgPressure: 0 };
       }
       const averages = Utils.avgFrequencyMap(beam.soundPressure);
-      map[key].avgFrequency += averages.avgFrequency * averages.avgPressure;
+      map[key].avgFrequency = averages.avgFrequency;
       map[key].avgPressure += averages.avgPressure;
-      map[key].count += 1;
 
       const direction = beam.to.clone().sub(beam.from).normalize();
 
@@ -260,18 +259,19 @@ function generateHeatmap(soundBeams: SoundBeam[]) {
       travel += nextTravel + 0.000001;
     }
   });
-
   const values = Object.values(map);
-  let max = values[0].avgPressure;
+  let maxPressure = values[0].avgPressure;
+  let minFrequency = values[0].avgFrequency;
+  let maxFrequency = values[0].avgFrequency;
   for (let i = 1; i < values.length; i++) {
-    if (values[i].avgPressure > max) {
-      max = values[i].avgPressure;
-    }
+    maxPressure = Math.max(maxPressure, values[i].avgPressure);
+    minFrequency = Math.min(minFrequency, values[i].avgFrequency);
+    maxFrequency = Math.max(maxFrequency, values[i].avgFrequency);
   }
   Object.keys(map).forEach((key) => {
-    map[key].avgPressure /= max;
-    map[key].avgFrequency /= map[key].count;
-    map[key].avgFrequency /= map[key].avgPressure;
+    const averages = map[key];
+    averages.avgPressure /= maxPressure;
+    averages.avgFrequency = (averages.avgFrequency - minFrequency) / (maxFrequency - minFrequency);
   });
 
   return Object.entries(map)
@@ -279,7 +279,7 @@ function generateHeatmap(soundBeams: SoundBeam[]) {
       const [x, y, z] = key.split(",").map((v) => Number(v));
       const opacity = averages.avgPressure;
       if (opacity < 0.01) return null;
-      const colorLerp = new three.Color(0xff0000).lerp(new three.Color(0x00ffff), averages.avgFrequency / 4000);
+      const colorLerp = new three.Color(0xff0000).lerp(new three.Color(0x00ffff), averages.avgFrequency);
       const geometry = new three.SphereGeometry(heatMapStep * 0.5);
       const material = new three.MeshBasicMaterial({
         color: colorLerp,

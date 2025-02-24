@@ -3,7 +3,7 @@ import { Config, materials, noises } from "./configscheme";
 export const config: Config = {
   settings: {
     sourceResolution: 0.1,
-    maxBounces: 100,
+    maxBounces: 20,
     heatMapStep: 0.25,
   },
   room: {
@@ -24,8 +24,8 @@ export const config: Config = {
     objects: [
       {
         path: "/3d-model.obj",
-        position: [-1.5, 0.25, 5.5],
-        scale: [0.0012, 0.0012, 0.0012],
+        position: [-1.05, 0.095, 5.85],
+        scale: [0.001, 0.001, 0.001],
         rotation: [0, 180, 0],
         soundReflexionFac: materials.furniture_textile.soundReflexionFac,
       },

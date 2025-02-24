@@ -31,7 +31,10 @@ export default class Utils {
   static avgFrequencyMap(fm: FrequencyMap) {
     const keys = Object.keys(fm);
     const avgVolume = this.sumFrequencyMap(fm) / keys.length;
-    const avgFrequency = keys.reduce((sum, cur) => sum + Number(cur) * fm[cur], 0) / (keys.length * avgVolume);
+    const avgFrequency = Math.pow(
+      keys.reduce((sum, cur) => sum + Number(cur) * fm[cur], 0) / (keys.length * avgVolume) / 4000,
+      0.5
+    );
     return { avgFrequency, avgPressure: avgVolume };
   }
 
