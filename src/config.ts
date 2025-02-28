@@ -2,23 +2,23 @@ import { Config, materials, noises } from "./configscheme";
 
 export const config: Config = {
   settings: {
-    sourceResolution: 0.1,
+    sourceResolution: 0.2,
     maxBounces: 20,
-    heatMapStep: 0.25,
+    heatMapStep: 0.4,
   },
   room: {
     sources: [
       {
-        position: [-3.6, 1.4, 6.5],
+        position: [-3.6, 1.0, 6.2],
         volume: noises.music_techno,
         spreadAngle: 120,
-        direction: [1, 0, -0.4],
+        direction: [1, 0, -0.3],
       },
       {
-        position: [-3.6, 1.5, 4.5],
+        position: [-3.6, 1.0, 4.8],
         volume: noises.music_techno,
         spreadAngle: 120,
-        direction: [1, 0, 0.4],
+        direction: [1, 0, 0.3],
       },
     ],
     objects: [
@@ -133,6 +133,16 @@ export const config: Config = {
           [-3.87, 0, 7.96],
           [0, 0, 7.96],
           [0, 0, 0],
+        ],
+      },
+      {
+        soundReflexionFac: materials.acoustic_panel.soundReflexionFac,
+        vertices: [
+          [0, 0, 2.28],
+          [0, 0, 4.28],
+          [0, 2.44, 4.28],
+          [0, 2.44, 2.28],
+          [0, 0, 2.28],
         ],
       },
     ],

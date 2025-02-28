@@ -29,13 +29,14 @@ export default class Utils {
   }
 
   static avgFrequencyMap(fm: FrequencyMap) {
-    const keys = Object.keys(fm);
-    const avgVolume = this.sumFrequencyMap(fm) / keys.length;
-    const avgFrequency = Math.pow(
-      keys.reduce((sum, cur) => sum + Number(cur) * fm[cur], 0) / (keys.length * avgVolume) / 4000,
-      0.5
-    );
-    return { avgFrequency, avgPressure: avgVolume };
+    const totalPressure = this.sumFrequencyMap(fm);
+    let freqWeightedSum = 0;
+    for (const freqStr in fm) {
+      freqWeightedSum += Number(freqStr) * fm[freqStr];
+    }
+    const avgFrequency = freqWeightedSum / totalPressure;
+    const avgPressure = totalPressure / Object.keys(fm).length;
+    return { avgFrequency, avgPressure };
   }
 
   static Pt2Vector3(pt: Pt) {

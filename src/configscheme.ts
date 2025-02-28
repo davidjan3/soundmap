@@ -59,6 +59,9 @@ export const materials = {
   furniture_textile: {
     soundReflexionFac: { 125: 0.92, 250: 0.85, 500: 0.75, 1000: 0.71, 2000: 0.57, 4000: 0.61 },
   },
+  acoustic_panel: {
+    soundReflexionFac: { 125: 0.6, 250: 0.55, 500: 0.5, 1000: 0.2, 2000: 0.1, 4000: 0.05 },
+  },
 };
 
 export const noises: { [index: string]: FrequencyMap } = {
